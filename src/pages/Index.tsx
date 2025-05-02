@@ -7,6 +7,7 @@ import ResultsDisplay from '@/components/ResultsDisplay';
 import { extractDataFromPdf, downloadExcelFile } from '@/services/extractionService';
 import { DocumentType, ExtractionResult, ResultsData } from '@/types/extraction';
 import { useToast } from "@/components/ui/use-toast";
+import { FileText } from "lucide-react";
 
 const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
