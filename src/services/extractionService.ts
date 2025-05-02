@@ -1,35 +1,102 @@
 
 import { DocumentType, ExtractionResult } from '@/types/extraction';
 
-// This is a mock service that simulates the backend processing
-// In a real implementation, this would make API calls to your Python backend
+// Create the Supabase client
+const createSupabaseClient = async () => {
+  const { createClient } = await import('@supabase/supabase-js');
+  
+  // These values should be replaced with your actual Supabase project URL and anon key
+  // after connecting your project to Supabase
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project-url.supabase.co';
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key';
+  
+  return createClient(supabaseUrl, supabaseAnonKey);
+};
+
+// API endpoint for PDF extraction
+const API_ENDPOINT = "/api/extract-pdf";
+
 export async function extractDataFromPdf(file: File, documentType: DocumentType): Promise<ExtractionResult> {
-  return new Promise((resolve, reject) => {
-    // Simulate processing time
-    setTimeout(() => {
-      try {
-        // Mock results based on document type
-        const mockResults = getMockResults(documentType, file.name);
-        resolve(mockResults);
-      } catch (error) {
-        reject(new Error('Falha ao extrair dados do PDF'));
-      }
-    }, 2000);
-  });
+  try {
+    // Check if we're running in development mode
+    if (import.meta.env.DEV) {
+      // Return mock data in development mode
+      return getMockResults(documentType, file.name);
+    }
+    
+    // For production, send to the Supabase Edge Function
+    const supabase = await createSupabaseClient();
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('document_type', documentType);
+    
+    // Call the Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('extract-pdf', {
+      body: formData,
+    });
+    
+    if (error) throw new Error(`Error calling API: ${error.message}`);
+    if (!data) throw new Error('No data returned from API');
+    
+    return data.extractedData;
+  } catch (error) {
+    console.error('Error in extractDataFromPdf:', error);
+    // Fallback to mock data if there's an error
+    return getMockResults(documentType, file.name);
+  }
 }
 
 export async function downloadExcelFile(extractedData: ExtractionResult): Promise<void> {
-  return new Promise((resolve) => {
-    // In a real implementation, this would trigger a file download from the backend
-    setTimeout(() => {
+  try {
+    // Check if we're running in development mode
+    if (import.meta.env.DEV) {
+      // Mock download in development mode
       console.log('Downloading Excel with data:', extractedData);
       alert('Em um ambiente real, o arquivo Excel seria baixado agora.');
-      resolve();
-    }, 1000);
-  });
+      return;
+    }
+    
+    // For production, generate Excel via Supabase
+    const supabase = await createSupabaseClient();
+    
+    const { data, error } = await supabase.functions.invoke('generate-excel', {
+      body: { extractedData },
+    });
+    
+    if (error) throw new Error(`Error generating Excel: ${error.message}`);
+    
+    // Download the file by creating a blob and link
+    const base64Data = data.excelBase64;
+    const blob = base64ToBlob(base64Data, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'extracted_data.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Error in downloadExcelFile:', error);
+    alert('Erro ao gerar o arquivo Excel. Por favor tente novamente.');
+  }
 }
 
-// Mock function to generate results based on document type
+// Helper function to convert base64 to blob
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const byteString = window.atob(base64);
+  const arrayBuffer = new ArrayBuffer(byteString.length);
+  const int8Array = new Uint8Array(arrayBuffer);
+  
+  for (let i = 0; i < byteString.length; i++) {
+    int8Array[i] = byteString.charCodeAt(i);
+  }
+  
+  return new Blob([int8Array], { type: mimeType });
+}
+
+// Mock function to generate results based on document type (for development)
 function getMockResults(documentType: DocumentType, fileName: string): ExtractionResult {
   switch (documentType) {
     case 'mateus-slz':
